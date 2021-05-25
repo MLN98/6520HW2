@@ -13,141 +13,79 @@
 #'@return The solution to the linear system
 #'
 #'@export
-solve_ols <- function(A,b, x0,num_cores = 1, parallel = F, method = "Gauss", maxit = 10000){
-
+solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", maxit = 10000){
   A = as.matrix(A)
   n = dim(A)[1]
-  p = dim(A)[2]
-  U= getU(A);L=getL(A); D=diag(diag(A));
+  m = dim(A)[2]
+  U = A
+  L = A
+  L[upper.tri(L, diag = TRUE)] = 0
+  U[lower.tri(U, diag = TRUE)] = 0
+  D=diag(diag(A))
 
-  if (any(is.na(x0))){
-    x0 = rep(0, p)
-  }
-
-  ###Solve the problem using designated method.
   if (method == "Gauss"){
-
     if (norm(solve(L+D,U),'2')>1){
-      warning("Don't converge")
+      warning("The solution doesn't converge with Gauss-Seidel method.")
     }
     else{
-      res =  f.iter(A, b, x0, GS,maxit)
+      for (i in 1:maxit){
+        # Apply Gauss-seidel
+        x_prev = x0
+        A_ = A
+        D = diag(A_)
+        diag(A_) = 0
+        for (i in 1:length(x0)) {
+          x0[i] = (b[i] - sum(A_[i,]* x0))/D[i]
+        }
+        # Return value when converge
+        if (norm(x0-x_prev,'2')<1e-5){
+          return(x0)
+        }
+      }
     }
   }
 
   if (method == "Jacobi"){
-
     if(norm(-solve(D,L+U),'2')>1){
-      warning("Don't converge")
+      warning("The solution doesn't converge with Jacobi method.")
     }
-
     else{
       if(!parallel){
-        res =  f.iter(A, b, x0, Jac,maxit)
+        for (i in 1:maxit){
+          A_ = A
+          D = diag(A_)
+          diag(A_) = 0
+          n=length(x0)
+          x = rep(0,n)
+          for (i in 1:n) {
+            x[i] =(b[i] - sum(A_[i, ]*x0))/D[i]
+          }
+          if (norm(x0-x,'2')<1e-5){
+            return(x)
+          }
+          x0 = x
+        }
+        res = x
       }
 
-      else{
+      if(parallel == TRUE){
         registerDoParallel(makeCluster(num_cores))
-        res = f.iter(A, b, x0, Jac.P,maxit)
+        for (i in 1:maxit){
+          A_ = A
+          D = diag(A_)
+          diag(A_) = 0
+          outlist = foreach(i = 1:length(x0),.multicombine = TRUE)  %dopar% {
+            (b[i]- sum(A_[i, ]*x0))/D[i]
+          }
+          x = as.vector(unlist(outlist))
+          if (norm(x0-x,'2')<1e-5){
+            return(x)
+          }
+          x0 = x
+        }
+        res = x
       }
     }
   }
-
-  return (res)
+  return(res)
 }
-
-
-#' obtain the upper triangular matrix of A
-#'@param A Linear System of interest
-#'@return the  upper triangular matrix of A
-#'@author Yixiao Lin
-#'@export
-getU <- function(A){
-  A[lower.tri(A)] = 0
-  diag(A)=0
-  return(A)
-}
-
-#' obtain the lower triangular matrix of A
-#'@param A Linear System of interest
-#'@return the lower triangular matrix of A
-#'@author Yixiao Lin
-#'@export
-getL <- function(A){
-  A[upper.tri(A)] = 0
-  diag(A)=0
-  return(A)
-}
-
-
-#' Gauss-Seidel Method
-#'@param A Linear System of interest
-#'@param b Target Vector
-#'@param x Initial guess of the solution
-#'@export
-GS = function(A, b, x) {
-  D = diag(A)
-  n=length(x)
-  diag(A) = 0
-  for (i in 1:n) {
-    x[i] = (b[i] - sum(A[i, ]* x))/D[i]
-  }
-  return(x)
-}
-
-
-
-#' Jacobi Method
-#'@param A Linear System of interest
-#'@param b Target Vector
-#'@param x Initial guess of the solution
-#'@export
-Jac <- function(A, b, x){
-  D = diag(A)
-  diag(A) = 0
-  n=length(x)
-  x1 = rep(0,n)
-  for (i in 1:n) {
-    x1[i] =(b[i] - sum(A[i, ]*x))/D[i]
-  }
-  return(x1)
-}
-
-
-#' Parallel Jacobi
-#'@param A Linear System of interest
-#'@param b Target Vector
-#'@param x Initial guess of the solution
-#'@export
-Jac.P <- function(A, b, x){
-  D = diag(A)
-  n=length(x)
-  diag(A) = 0
-  outlist = foreach(i = 1:n,.multicombine = TRUE)  %dopar% {
-    (b[i]- sum(A[i, ]*x))/D[i]
-  }
-  x1 = as.vector(unlist(outlist))
-  return(x1)
-}
-
-
-#' #' iterative method for GS, Jacobi and Parallel Jacobi
-#' #'@param A Linear System of interest
-#' #'@param b Target Vector
-#' #'@param x0 Initial guess of the solution
-#' #'@param f function used for solving Ax=b. There are 3 options: "Gauss" "Jacobi"  and "Parallel Jacobi"
-#' #'@param maxit Maximum Number of Iteration
-#' #'@export
-#' f.iter <- function(A, b, x0, f, maxit){
-#'   for (i in 1:maxit){
-#'     x <- f(A, b, x0)
-#'     if (norm(x0-x,'2')<1e-5){
-#'       return(x)
-#'     }
-#'     if (any(abs(x) == Inf))
-#'       stop("The algorithm diverges")
-#'     x0 = x
-#'
-#'   }
-#'   return(x)
-#' }

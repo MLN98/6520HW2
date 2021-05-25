@@ -9,6 +9,7 @@ vignette: >
 
 
 ```{r}
+
 solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", maxit = 10000){
   A = as.matrix(A)
   n = dim(A)[1]
@@ -46,24 +47,23 @@ solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", ma
       warning("The solution doesn't converge with Jacobi method.")
     }
     else{
-      if(parallel == FALSE){
-        for (i in 1:maxit){
-          A_ = A
-          D = diag(A_)
-          diag(A_) = 0
-          n = length(x0)
-          x = rep(0,n)
-          for (i in 1:n) {
-            x[i] =(b[i] - sum(A_[i, ]*x0))/D[i]
+      if(!parallel){
+          for (i in 1:maxit){
+            A_ = A
+            D = diag(A_)
+            diag(A_) = 0
+            n=length(x0)
+            x = rep(0,n)
+            for (i in 1:n) {
+              x[i] =(b[i] - sum(A_[i, ]*x0))/D[i]
+            }
+            if (norm(x0-x,'2')<1e-5){
+              return(x)
+            }
+            x0 = x
           }
-          # Return when converge
-          if (norm(x0-x,'2')<1e-5){
-            # print(length(x))
-            return(x)
-          }
-          x0 = x
+          res = x
         }
-      }
 
       if(parallel == TRUE){
         registerDoParallel(makeCluster(num_cores))
@@ -72,7 +72,7 @@ solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", ma
           D = diag(A_)
           diag(A_) = 0
           outlist = foreach(i = 1:length(x0),.multicombine = TRUE)  %dopar% {
-            (b[i]- sum(A[i, ]*x0))/D[i]
+            (b[i]- sum(A_[i, ]*x0))/D[i]
           }
           x = as.vector(unlist(outlist))
           if (norm(x0-x,'2')<1e-5){
@@ -80,6 +80,7 @@ solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", ma
           }
           x0 = x
         }
+        res = x  
       }
     }
   }
@@ -104,11 +105,15 @@ b = A%*%v
 ###Actual application
 x0=rep(0,100)
 
-x = solve_ols(A, b,x0,method = 'Jacobi')
-# print(x)
+x = solve_ols(A, b,x0,'Jacobi',parallel = F)
+print(x[1:3])
 print(norm(x-v,'2'))
-length(x)
-length(v)
+x = solve_ols(A, b,x0,'Gauss',parallel = F)
+print(x[1:3])
+print(norm(x-v,'2'))
+x = solve_ols(A, b,x0,'Jacobi',parallel = T)
+print(x[1:3])
+print(norm(x-v,'2'))
 ```
 
 
@@ -235,3 +240,7 @@ Y=X%*%beta+rnorm(n)
 
 elnet_coord(Y,X, beta, alpha=0.5,lambda=0.1)
 ```
+
+
+
+
