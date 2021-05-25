@@ -1,0 +1,240 @@
+---
+title: "Vignettes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{yl2883}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+
+```{r}
+solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", maxit = 10000){
+  A = as.matrix(A)
+  n = dim(A)[1]
+  m = dim(A)[2]
+  U = A
+  L = A
+  L[upper.tri(L, diag = TRUE)] = 0
+  U[lower.tri(U, diag = TRUE)] = 0
+  D=diag(diag(A))
+
+  if (method == "Gauss"){
+    if (norm(solve(L+D,U),'2')>1){
+      warning("The solution doesn't converge with Gauss-Seidel method.")
+    }
+    else{
+      for (i in 1:maxit){
+        # Apply Gauss-seidel
+        x_prev = x0
+        A_ = A
+        D = diag(A_)
+        diag(A_) = 0
+        for (i in 1:length(x0)) {
+          x0[i] = (b[i] - sum(A_[i,]* x0))/D[i]
+        }
+        # Return value when converge
+        if (norm(x0-x_prev,'2')<1e-5){
+          return(x0)
+        }
+      }
+    }
+  }
+
+  if (method == "Jacobi"){
+    if(norm(-solve(D,L+U),'2')>1){
+      warning("The solution doesn't converge with Jacobi method.")
+    }
+    else{
+      if(parallel == FALSE){
+        for (i in 1:maxit){
+          A_ = A
+          D = diag(A_)
+          diag(A_) = 0
+          n = length(x0)
+          x = rep(0,n)
+          # print(length(x0))
+          # print(length(x))
+          # print(dim(A_))
+          for (i in 1:n) {
+            x[i] =(b[i] - sum(A_[i, ]*x0))/D[i]
+          }
+          # Return when converge
+          if (norm(x0-x,'2')<1e-5){
+            # print(length(x))
+            return(x)
+          }
+          x0 = x
+        }
+      }
+
+      if(parallel == TRUE){
+        registerDoParallel(makeCluster(num_cores))
+        for (i in 1:maxit){
+          A_ = A
+          D = diag(A_)
+          diag(A_) = 0
+          outlist = foreach(i = 1:length(x0),.multicombine = TRUE)  %dopar% {
+            (b[i]- sum(A[i, ]*x0))/D[i]
+          }
+          x = as.vector(unlist(outlist))
+          if (norm(x0-x,'2')<1e-5){
+            return(x)
+          }
+          x0 = x
+        }
+      }
+    }
+  }
+  return(res)
+}
+```
+
+
+```{r}
+makeA <- function(n, alpha){
+  A <- diag(alpha, n)
+  A[abs(row(A) - col(A)) == 1] =-1
+  return(A)
+}
+
+A =makeA(100,2)
+
+###Create the nessary vector
+v = rep(c(1,0),50)
+b = A%*%v
+
+###Actual application
+x0=rep(0,100)
+
+x = solve_ols(A, b,x0,method = 'Jacobi')
+# print(x)
+print(norm(x-v,'2'))
+length(x)
+length(v)
+```
+
+
+```{r setup, include=FALSE}
+algo_leverage <- function(y,X,sample_size,method ="uniform"){
+  X = as.matrix(X)
+  n = dim(X)[1]
+  if(method == 'uniform'){
+    pi = rep(1/n, n)
+    n=dim(X)[1]
+    m=dim(X)[2]
+    index = seq(1,n,1)
+    idx = sample(index, size = sample_size, prob = pi,replace = TRUE)
+    sampleX=X[idx,]
+    sampleY=y[idx]
+    pi_=1/ (sample_size*pi[idx]^0.5)
+    model <- lm(sampleY ~ sampleX, weights=pi_)
+    beta = model$coefficients
+    return(beta)
+  }
+
+  if(method == 'weighted'){
+    H =X%*%solve(t(X)%*%X)%*%t(X)
+    pi = diag(H)/sum(diag(H))
+    n=dim(X)[1]
+    p=dim(X)[2]
+    idx=sample(n, size = sample_size, replace = TRUE, prob=pi)
+    sampleX=X[idx,]
+    sampleY=y[idx]
+    pi_=1/ (sample_size*pi[idx]^0.5)
+    model <- lm(sampleY ~ sampleX, weights=pi_)
+    beta = model$coefficients
+    return(beta)
+  }
+}
+
+
+```
+
+```{r}
+# set.seed(65206520)
+# set.seed(103)
+n = 500
+x = rt(500,6)
+# dim(as.matrix(X))
+epsilon = rnorm(500, 0, 1)
+y = -x + epsilon
+beta_hat = lm(y~x)$coefficients
+r = 50
+beta_uni = algo_leverage(y,x,r,method ="uniform")
+beta_weighted = algo_leverage(y,x,r,method ="weighted")
+
+plot(x,y,main = paste("Beta_uni,r=",r))
+# points(sample_x,sample_y,col='dark red',pch = "+")
+abline(beta_hat)
+abline(beta_uni,col="dark red")
+abline(beta_weighted,col="dark green")
+
+```
+```{r}
+elnet_coord <- function(y,X, beta, alpha,lambda, maxit= 10000, tol = 1e-6){
+  X = as.matrix(X)
+  n = dim(X)[1]
+  m = dim(X)[2]
+
+  Y = (y-mean(y))/sd(y)
+  Xmean = apply(X,2,mean)  
+  Xsd = apply(X,2,sd)
+  X = (X - matrix(Xmean,nrow(X),ncol(X),byrow=TRUE))%*%diag(1/Xsd)
+
+  if(any(is.na(beta))){
+    beta = rep(0, m)
+  }
+  tol.met=F
+  beta1=beta
+  iter=0
+  
+  while(!tol.met){
+    
+    beta0=beta1
+    iter=iter+1
+    
+    for (j in 1:m){
+      ej=Y-X[,-j]%*% beta1[-j]
+      xj=X[,j]
+      z=mean(xj*ej)
+      num=sign(z)*max(0,abs(z)-lambda*alpha)
+      denom=mean(xj^2)+lambda*(1-alpha)
+      beta.j=num/denom
+      beta1[j]=beta.j
+    }
+    
+    if (any(abs(beta1) == Inf))
+      stop("The algorithm diverges")
+    
+    if (iter == maxit) {
+      stop("Max iteration reached")
+    }
+    
+    if (norm(beta0-beta1,'2')<tol){
+      tol.met=T
+    }
+  }
+  
+  return(beta1)
+}
+```
+
+```{r}
+library(mvtnorm)
+p=20
+n=100
+beta=c(2,0,-2,0,1,0,-1,0,rep(0,12))
+Sigma=diag(p)
+
+Sigma[1,2]=0.8
+Sigma[2,1]=0.8
+Sigma[5,6]=0.8
+Sigma[6,5]=0.8
+
+set.seed(65206520)
+X=rmvnorm(n, sigma=Sigma)
+Y=X%*%beta+rnorm(n)
+
+elnet_coord(Y,X, beta, alpha=0.5,lambda=0.1)
+```
