@@ -131,23 +131,23 @@ Jac.P <- function(A, b, x){
 }
 
 
-#' iterative method for GS, Jacobi and Parallel Jacobi
-#'@param A Linear System of interest
-#'@param b Target Vector
-#'@param x0 Initial guess of the solution
-#'@param f function used for solving Ax=b. There are 3 options: "Gauss" "Jacobi"  and "Parallel Jacobi"
-#'@param maxit Maximum Number of Iteration
-#'@export
-f.iter <- function(A, b, x0, f, maxit){
-  for (i in 1:maxit){
-    x <- f(A, b, x0)
-    if (norm(x0-x,'2')<1e-5){
-      return(x)
-    }
-    if (any(abs(x) == Inf))
-      stop("The algorithm diverges")
-    x0 = x
-
-  }
-  return(x)
-}
+#' #' iterative method for GS, Jacobi and Parallel Jacobi
+#' #'@param A Linear System of interest
+#' #'@param b Target Vector
+#' #'@param x0 Initial guess of the solution
+#' #'@param f function used for solving Ax=b. There are 3 options: "Gauss" "Jacobi"  and "Parallel Jacobi"
+#' #'@param maxit Maximum Number of Iteration
+#' #'@export
+#' f.iter <- function(A, b, x0, f, maxit){
+#'   for (i in 1:maxit){
+#'     x <- f(A, b, x0)
+#'     if (norm(x0-x,'2')<1e-5){
+#'       return(x)
+#'     }
+#'     if (any(abs(x) == Inf))
+#'       stop("The algorithm diverges")
+#'     x0 = x
+#'
+#'   }
+#'   return(x)
+#' }

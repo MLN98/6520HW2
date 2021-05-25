@@ -53,9 +53,6 @@ solve_ols <- function(A,b, x0, num_cores = 1, parallel = F, method = "Gauss", ma
           diag(A_) = 0
           n = length(x0)
           x = rep(0,n)
-          # print(length(x0))
-          # print(length(x))
-          # print(dim(A_))
           for (i in 1:n) {
             x[i] =(b[i] - sum(A_[i, ]*x0))/D[i]
           }
